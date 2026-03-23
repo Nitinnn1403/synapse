@@ -1,14 +1,51 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import React from 'react'
-import { FileText, Bot, User, X, ExternalLink, ScrollText, MessageSquareQuote, GitCompare, BarChart2, Lightbulb } from 'lucide-react'
+import { FileText, Bot, User, X, ExternalLink, ScrollText, MessageSquareQuote, GitCompare, BarChart2, Lightbulb, Download } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import ReactMarkdown from 'react-markdown'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 import { useStore } from '../store'
 import { chatQueryStream } from '../api/chat'
 import type { Message, Citation } from '../types/chat'
 import TypewriterText from '../components/ui/TypewriterText'
 import { PromptInputBox } from '../components/ui/ai-prompt-box'
+
+// ── PDF Export ────────────────────────────────────────────────────────────────
+async function exportMessageToPdf(element: HTMLElement) {
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#0f0f0f',
+    ignoreElements: (el) =>
+      el.tagName === 'IMG' ||
+      el.classList.contains('export-ignore'),
+  })
+
+  const imgData = canvas.toDataURL('image/png')
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const margin = 10
+  const contentWidth = pageWidth - margin * 2
+  const imgHeight = (canvas.height * contentWidth) / canvas.width
+
+  let heightLeft = imgHeight
+  let yPosition = margin
+
+  pdf.addImage(imgData, 'PNG', margin, yPosition, contentWidth, imgHeight)
+  heightLeft -= pageHeight - margin * 2
+
+  while (heightLeft > 0) {
+    pdf.addPage()
+    yPosition = -(imgHeight - heightLeft) - margin
+    pdf.addImage(imgData, 'PNG', margin, yPosition, contentWidth, imgHeight)
+    heightLeft -= pageHeight - margin * 2
+  }
+
+  pdf.save('synapse-answer.pdf')
+}
 
 const messageVariants = {
   hidden: { opacity: 0, y: 6 },
@@ -241,8 +278,20 @@ function MessageBubble({
 }) {
   const isUser = message.role === 'user'
   const showTypewriter = !isUser && animateIn
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [exporting, setExporting] = useState(false)
 
   if (!isUser && !message.content) return null
+
+  const handleExport = async () => {
+    if (!contentRef.current || exporting) return
+    setExporting(true)
+    try {
+      await exportMessageToPdf(contentRef.current)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <motion.div
@@ -266,7 +315,7 @@ function MessageBubble({
           </div>
         ) : (
           /* AI: no bubble — just text, slight left-border accent */
-          <div className="w-full pl-3 border-l-2 border-border">
+          <div ref={contentRef} className="w-full pl-3 border-l-2 border-border">
             {showTypewriter ? (
               <TypewriterText fullText={message.content} speed={20} isStreaming={isStreaming} onComplete={onAnimationComplete}>
                 {(revealedText, isRevealing) => (
@@ -289,7 +338,7 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Confidence + source pills */}
+        {/* Confidence + source pills + export button */}
         {!isUser && (
           <div className="mt-2.5 pl-3 flex flex-wrap items-center gap-2">
             {message.confidence != null && (
@@ -304,7 +353,7 @@ function MessageBubble({
                   <button
                     key={c.source_index}
                     onClick={() => onOpenSource(c)}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-surface-2 hover:bg-surface-3 border border-border rounded text-xs text-text-tertiary hover:text-text-primary transition-all"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-surface-2 hover:bg-surface-3 border border-border rounded text-xs text-text-tertiary hover:text-text-primary transition-all export-ignore"
                   >
                     <FileText className="w-2.5 h-2.5" />
                     <span className="max-w-[120px] truncate">{c.document_name}</span>
@@ -313,6 +362,22 @@ function MessageBubble({
                     )}
                   </button>
                 ))}
+              </>
+            )}
+
+            {/* Export PDF button */}
+            {!isStreaming && message.content && (
+              <>
+                <span className="text-border text-xs export-ignore">·</span>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  title="Export answer as PDF"
+                  className="export-ignore inline-flex items-center gap-1 px-2 py-0.5 bg-surface-2 hover:bg-primary/15 border border-border hover:border-primary/30 rounded text-xs text-text-tertiary hover:text-primary transition-all disabled:opacity-50"
+                >
+                  <Download className="w-2.5 h-2.5" />
+                  <span>{exporting ? 'Exporting…' : 'Export PDF'}</span>
+                </button>
               </>
             )}
           </div>
