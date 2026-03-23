@@ -13,7 +13,7 @@ import TypewriterText from '../components/ui/TypewriterText'
 import { PromptInputBox } from '../components/ui/ai-prompt-box'
 
 // ── PDF Export ────────────────────────────────────────────────────────────────
-async function exportMessageToPdf(element: HTMLElement) {
+async function exportMessageToPdf(element: HTMLElement, question?: string) {
   const canvas = await html2canvas(element, {
     scale: 2,
     useCORS: true,
@@ -44,7 +44,20 @@ async function exportMessageToPdf(element: HTMLElement) {
     heightLeft -= pageHeight - margin * 2
   }
 
-  pdf.save('synapse-answer.pdf')
+  let filename: string
+  if (question && question.trim()) {
+    filename = question
+      .trim()
+      .replace(/[/\\:*?"<>|]/g, '')   // strip invalid filename chars
+      .replace(/\s+/g, '_')            // spaces → underscores
+      .slice(0, 60)                    // max 60 chars
+      .replace(/_+$/, '')              // trim trailing underscores
+  } else {
+    const now = new Date()
+    filename = `synapse-${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`
+  }
+
+  pdf.save(`${filename}.pdf`)
 }
 
 const messageVariants = {
@@ -269,12 +282,14 @@ function MessageBubble({
   animateIn,
   onOpenSource,
   onAnimationComplete,
+  question,
 }: {
   message: Message
   isStreaming: boolean
   animateIn: boolean
   onOpenSource: (c: Citation) => void
   onAnimationComplete: () => void
+  question?: string
 }) {
   const isUser = message.role === 'user'
   const showTypewriter = !isUser && animateIn
@@ -287,7 +302,7 @@ function MessageBubble({
     if (!contentRef.current || exporting) return
     setExporting(true)
     try {
-      await exportMessageToPdf(contentRef.current)
+      await exportMessageToPdf(contentRef.current, question)
     } finally {
       setExporting(false)
     }
@@ -373,9 +388,9 @@ function MessageBubble({
                   onClick={handleExport}
                   disabled={exporting}
                   title="Export answer as PDF"
-                  className="export-ignore inline-flex items-center gap-1 px-2 py-0.5 bg-surface-2 hover:bg-primary/15 border border-border hover:border-primary/30 rounded text-xs text-text-tertiary hover:text-primary transition-all disabled:opacity-50"
+                  className="export-ignore inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/60 rounded text-xs font-medium text-primary transition-all disabled:opacity-40"
                 >
-                  <Download className="w-2.5 h-2.5" />
+                  <Download className="w-3 h-3" />
                   <span>{exporting ? 'Exporting…' : 'Export PDF'}</span>
                 </button>
               </>
@@ -545,7 +560,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 pb-36">
           <div className="max-w-3xl mx-auto">
             <AnimatePresence>
-              {messages.map((msg) => (
+              {messages.map((msg, idx) => (
                 <MessageBubble
                   key={msg.id}
                   message={msg}
@@ -553,6 +568,7 @@ export default function ChatPage() {
                   animateIn={msg.id === animatingId}
                   onOpenSource={handleOpenSource}
                   onAnimationComplete={() => setAnimatingId(null)}
+                  question={msg.role === 'assistant' ? messages[idx - 1]?.content : undefined}
                 />
               ))}
             </AnimatePresence>
