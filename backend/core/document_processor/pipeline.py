@@ -106,7 +106,6 @@ async def process_document(document_id: str):
                 embeddings=embeddings.tolist(),
                 metadatas=[{
                     "document_id": document_id,
-                    "user_id": doc.user_id,
                     "filename": doc.filename,
                     "file_type": doc.file_type,
                     "page_number": c["page_number"] or 0,
@@ -116,7 +115,7 @@ async def process_document(document_id: str):
 
             # Store in BM25
             bm25 = BM25Index()
-            bm25.add_documents([{"id": c["id"], "content": c["content"], "user_id": doc.user_id} for c in chunk_dicts])
+            bm25.add_documents([{"id": c["id"], "content": c["content"]} for c in chunk_dicts])
 
             # Store chunks in database
             await crud.create_chunks(db, chunk_dicts)
